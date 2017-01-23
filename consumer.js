@@ -34,8 +34,8 @@ const infoReply = require('./replies').infoReply;
 const client = new Twitter({
   consumer_key: process.env.TWITTER_CONSUMER_KEY,
   consumer_secret: process.env.TWITTER_CONSUMER_SECRET,
-  access_token_key: process.env.ACCESS_TOKEN_KEY,
-  access_token_secret: process.env.ACCESS_TOKEN_SECRET
+  access_token_key: process.env.TWITTER_ACCESS_KEY,
+  access_token_secret: process.env.TWITTER_ACCESS_SECRET
 });
 
 if (help || topicName === undefined || (format != "binary" && format != "avro")) {
@@ -65,16 +65,14 @@ kafka.consumer(consumerGroup).join(consumerConfig, function(err, consumer_instan
         for(var i = 0; i < msgs.length; i++) {
             var oneTweet = msgs[i].value;
             if (format == "binary") {
-                // Messages keys (if available) and values are decoded from base64 into Buffers. You'll need to decode based
-                // on whatever serialization format you used. By default here, we just try to decode to text.
-                console.log(oneTweet.value.toString('utf8'));
+                console.log(oneTweet.toString('utf8'));
                 // Also available: msgs[i].key, msgs[i].partition
             } else {
-                console.log(JSON.stringify(oneTweet.value));
-                // oneTweet.value
+                console.log(JSON.stringify(oneTweet));
             }
-            if (oneTweet.in_reply_to_user_id === '823016304852537344') postTweet(infoReply(incomingTweet));
-            else if (oneTweet.screen_name !== 'climatetruthbot') weatherReply(incomingTweet).then(newTweet => postTweet(newTweet));
+            // replies with 'more info' message if the tweet is directed @ bot; else looks up user location and generates 'weather' tweet. 
+            if (oneTweet.in_reply_to_user_id === '823016304852537344') postTweet(infoReply(oneTweet));
+            else if (oneTweet.screen_name !== 'climatetruthbot') weatherReply(oneTweet).then(newTweet => postTweet(newTweet));
         }
 
         consumed += msgs.length;
@@ -124,14 +122,3 @@ const postTweet = ({ content, tweetIdToReplyTo }) =>  {
        }
     }) 
 }
-
-const CronJob = require('cron').CronJob;
-const PSATweets = require('./data/cronTweets');
-
-new CronJob('* */15 * * * *', function() {
-  //every fifteen minutes, tweets a random climate change fact
-  postTweet({
-    content: PSATweets[Math.floor(Math.random() * PSATweets.length)],
-    tweetIdToReplyTo: null,
-  })
-}, null, true, 'America/Los_Angeles');

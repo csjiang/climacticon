@@ -33,7 +33,7 @@ var access_secret = argv['access-secret'] || process.env.TWITTER_ACCESS_SECRET;
 var api_url = argv.url || "http://localhost:8082";
 var topicName = argv.topic;
 // General arguments
-var bufferMessages = argv['message-buffer-size'] || 100; // Number of tweets to buffer before calling produce()
+var bufferMessages = argv['message-buffer-size'] || 5; // Number of tweets to buffer before calling produce()
 var format = argv.format || "avro";
 var filter = argv.filter;
 var help = (argv.help || argv.h);
@@ -73,7 +73,6 @@ var schema = new KafkaRest.AvroSchema({
         { "name": "id", "type": "string" },
         { "name": "text", "type": "string" },
         { "name": "screen_name", "type": "string" },
-        { "name": "coordinates", "type": "string" },
         { "name": "place", "type": "string" },
         { "name": "in_reply_to_user_id", "type": "string" },
     ]
@@ -94,47 +93,33 @@ var windowed_interval = setInterval(reportWindowedRate, windowed_period);
 
 var endpoint = 'statuses/filter';
 var endpoint_opts = {
-    'language': 'en',
-    'track': 'liberal climate change, liberal global warming',
+    'track': 'liberal climate change, liberal global warming, climate change fake, global warming fake, climate change hoax, global warming hoax',
     //follow myself for replies
     'follow': '823016304852537344'
 };
-// if (filter) {
-//     endpoint = 'statuses/filter';
-//     endpoint_opts = {'track': filter};
-// } else {
-//     endpoint = 'statuses/sample';
-//     endpoint_opts = {'language': 'en'};
-// }
+
 twit.stream(endpoint, endpoint_opts, function(s) {
     stream = s;
     stream.on('data', function(data) {
         if (exiting) return;
 
-        // Filter to only tweets. Streaming data may contain other data and events such as friends lists, block/favorite
-        // events, list modifications, etc. Here we prefilter the data, although this could also be done downstream on
-        // the consumer if we wanted to preserve the entire stream. The heuristic we use to distinguish real tweets (or
-        // retweets) is the text field, which shouldn't appear at the top level of other events.
+        // Filter to only tweets.
         if (data.text === undefined)
             return;
 
-        // Extract just the ID and text. We could save more data, but this keeps the schema small and simple for this
-        // example
+        // Extract data needed
         var saved_data = {
             'id': data.id_str,
-            'screen_name': data.user.screen_name,
-            'coordinates': data.coordinates,
-            'place': data.place ? data.place.full_name : data.user.location,
             'text': data.text,
-            'in_reply_to_user_id': data.in_reply_to_user_id_str,
+            'screen_name': data.user.screen_name,
+            'place': data.place ? data.place.full_name : data.user.location || '',
+            'in_reply_to_user_id': data.in_reply_to_user_id_str || '',
         };
-        // If we're using Avro, we can just pass the data in directly. If we're
-        // using binary, we need to serialize it to a string ourselves.
+        console.log(saved_data);
+
         consumed.push(binary ? JSON.stringify(saved_data) : saved_data);
         windowed_collected++;
-        // Send if we've hit our buffering limit. The number of buffered messages balances your tolerance for losing data
-        // (if the process/host is killed/dies) against throughput (batching messages into fewer requests makes processing
-        // more efficient).
+        // Send if we've hit our buffering limit. 
         if (consumed.length >= bufferMessages) {
             messages_sent += consumed.length;
             var responseHandler = handleProduceResponse.bind(undefined, consumed.length);
